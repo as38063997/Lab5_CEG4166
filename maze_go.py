@@ -4,7 +4,7 @@ import RPi.GPIO as GPIO
 from Motor_control import RobotControl 
 from HCSR04 import HCSR04
 
-#Scan angles: right, center, left
+# Scan angles: right, center, left
 SCAN_ANGLES = [10, 80, 150]
 DISTANCE_THRESHOLD = 20  # cm
 
@@ -26,7 +26,7 @@ class Servo:
         self.pi.stop()
 
 def scan_directions(sensor, servo):
-    #Rotate the servo to scan the environment and return averaged distances.
+    # Rotate the servo to scan the environment and return averaged distances.
     distances = []
     for angle in SCAN_ANGLES:
         servo.set_angle(angle)
@@ -39,73 +39,67 @@ def scan_directions(sensor, servo):
     # Reset servo to face forward
     servo.set_angle(80)
     return distances
-    
+
 def decide_direction(distances):
     """
     Choose the direction with the maximum distance.
     If all readings are too short, return 'back'.
     """
-    # You could add filtering here if needed; for now, we simply pick the maximum.
     if max(distances) < DISTANCE_THRESHOLD:
         return "back"
-    # Map indices to directions
     mapping = {0: "right", 1: "forward", 2: "left"}
     best_index = distances.index(max(distances))
     return mapping[best_index]
 
 def main():
     print("Starting navigation system...")
+
+    # Set up GPIO for the HC-SR04 sensor (and any other GPIO pins)
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setwarnings(False)
     
-    #Pin assignments
+    # Pin assignments
     trig_pin = 7
     echo_pin = 12
-    servo_pin = 25  #This is the pin used to control the servo
+    servo_pin = 25  # This is the pin used to control the servo
 
-    #Initialize sensor, servo, and robot control
+    # Initialize sensor, servo, and robot control
     sensor = HCSR04(trig=trig_pin, echo=echo_pin)
     servo = Servo(servo_pin)
     pi = pigpio.pi()
     robot = RobotControl(pi)
     
-    
-    #Ensure servo is initially centered
+    # Ensure servo is initially centered
     servo.set_angle(80)
     
     try:
         while True:
-            #Check the distance straight ahead (sensor should be pointing forward)
+            # Check the distance straight ahead (sensor should be pointing forward)
             front_distance = sensor.measure(samples=3, unit="cm")
             print(f"Front distance: {front_distance} cm")
             
             if front_distance > DISTANCE_THRESHOLD:
-                #Path is clear, continue forward
+                # Path is clear, continue forward
                 robot.move_forward()
-                
             else:
-                #Obstacle detected, stop and scan for an alternative route
+                # Obstacle detected, stop and scan for an alternative route
                 robot.stop_robot()
-                
                 print("Obstacle detected! Scanning for alternative paths...")
                 distances = scan_directions(sensor, servo)
                 chosen_direction = decide_direction(distances)
                 print(f"Decided direction: {chosen_direction}")
                 
-                #Execute a turn based on the chosen direction
+                # Execute a turn based on the chosen direction
                 if chosen_direction == "left":
                     robot.rotate_left()
-                   
                 elif chosen_direction == "right":
                     robot.rotate_right()
-                    
                 elif chosen_direction == "back":
                     robot.move_backward()
                     time.sleep(0.5)
                     robot.rotate_left()
                     
-                
-                #After turning, resume forward motion (the loop will check distance again)
-            
-            #Small delay for stability
+            # Small delay for stability
             time.sleep(0.2)
     
     except KeyboardInterrupt:
@@ -115,6 +109,7 @@ def main():
         robot.stop_robot()
         servo.stop()
         pi.stop()
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     main()
